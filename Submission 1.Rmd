@@ -1,0 +1,54 @@
+---
+title: "Project Submission 1"
+output: pdf_document
+date: "2026-10-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Read in data, look at it 
+
+```{r}
+covariate_data <- read.csv("GSE85307_covar.csv")
+summary(covariate_data)
+str(covariate_data)
+head(covariate_data)
+
+gene_expression_data <- read.csv("GSE85307_geneExpression.csv")
+summary(gene_expression_data)
+str(gene_expression_data)
+head(gene_expression_data)
+
+gene_names <- read.csv("GSE85307_geneNames.csv")
+summary(gene_names)
+str(gene_names)
+head(gene_names)
+
+```
+what do I notice about the data?
+
+the covariate data has one subject per row and the columns are the covariates (long data)
+the data is character strings, will need to remove text and keep numerical values
+will also need to code for preeclampsia vs. normal and asthmatic vs. healthy
+no missing values
+
+the gene expression data has one subject per column, the rows are the probe ids (wide data)
+data is numerical, each column matches a geoid from covariate data (how to match the data)
+
+the gene name data has the gene name corresponding to the probe id (how to match the data)
+
+will need to pivot data
+
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
