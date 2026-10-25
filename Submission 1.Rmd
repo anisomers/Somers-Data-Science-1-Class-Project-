@@ -6,7 +6,12 @@ date: "2026-10-24"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
 ```
+
+used https://media.datacamp.com/legacy/image/upload/v1671056642/R_Text_Cheat_Sheet_3b4753f59a.png
+https://communicate-data-with-r.netlify.app/docs/tidyverse/
+https://dplyr.tidyverse.org/reference/across.html
 
 ## Read in data, look at it 
 
@@ -39,16 +44,59 @@ data is numerical, each column matches a geoid from covariate data (how to match
 
 the gene name data has the gene name corresponding to the probe id (how to match the data)
 
-will need to pivot data
+will need to pivot expression data to be longer
 
 
 
-## Including Plots
+## Cleaning data 
 
-You can also embed plots, for example:
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r}
+# clean covariate data to remove labels 
+# update data types
+# 0 = healthy, 1= asthmatic (should I replace num with char?, maybe down the road)
+# batch date is still char
+
+covariate_cleaned <- covariate_data %>% 
+  mutate(
+    mat_age_yrs = as.numeric(str_remove(mat_age_yrs, ".*: ")),
+    preg_preeclampsia = str_remove(preg_preeclampsia, ".*: "),
+    delivery_gestAge_wks = as.numeric(str_remove(delivery_gestAge_wks, ".*: ")),
+    sampleCollection_gestAge_wks = as.numeric(str_remove(sampleCollection_gestAge_wks, ".*: ")),
+    batch_Microarray = (str_remove(batch_Microarray, ".*: ")),
+    mat_BMI = as.numeric(str_remove(mat_BMI, ".*: ")),
+    mat_vitD = as.numeric(str_remove(mat_vitD, ".*: ")),
+    mat_asthma = as.numeric(str_remove(mat_asthma, ".*: "))
+  )
+
+head(covariate_cleaned)
+
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+
+Pivot gene expression data longer
+
+```{r}
+# pivot gene expression data, rename x to probe id for future join
+
+gene_expression_long <- gene_expression_data %>% 
+  pivot_longer(
+    cols = 2:158,
+      names_to = "geoID",
+    values_to = "expression value") %>% 
+  rename(PROBEID = X)
+head(gene_expression_long)
+
+
+# join covariate and expression data on geoid,  join gene name on probe id 
+pregnancy_data <- gene_expression_long %>% 
+  left_join(covariate_cleaned, by = "geoID") %>% 
+  left_join(gene_names, by = "PROBEID")
+
+head(pregnancy_data)
+
+## for tomorrow, I want to move gene name to column before expression value
+
+```
+
