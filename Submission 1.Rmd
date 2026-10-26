@@ -7,11 +7,19 @@ date: "2026-10-24"
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+# library(hrbrthemes)
+# library(artyfarty)
+# library(ggthemr)
+# library(ggsci)
+# library(ggthemes)
 ```
 
 used https://media.datacamp.com/legacy/image/upload/v1671056642/R_Text_Cheat_Sheet_3b4753f59a.png
 https://communicate-data-with-r.netlify.app/docs/tidyverse/
 https://dplyr.tidyverse.org/reference/across.html
+https://rstudio.github.io/cheatsheets/pngs/data-transformation.png
+https://pmc.ncbi.nlm.nih.gov/articles/PMC2702488/
+https://www.hopkinsmedicine.org/health/expert-qa/advanced-maternal-age
 
 ## Read in data, look at it 
 
@@ -55,7 +63,7 @@ will need to pivot expression data to be longer
 # clean covariate data to remove labels 
 # update data types
 # 0 = healthy, 1= asthmatic (should I replace num with char?, maybe down the road)
-# batch date is still char
+# batch date is still char, note date
 
 covariate_cleaned <- covariate_data %>% 
   mutate(
@@ -71,6 +79,12 @@ covariate_cleaned <- covariate_data %>%
 
 head(covariate_cleaned)
 
+# need to make sure geoid is unique before I join the tables below
+# the statement is true aka there aren't duplicates so I shouldn't get duplicates
+# when I join the tables on geoid
+
+nrow(covariate_cleaned) == length(unique(covariate_cleaned$geoID))
+
 ```
 
 
@@ -79,24 +93,183 @@ Pivot gene expression data longer
 
 ```{r}
 # pivot gene expression data, rename x to probe id for future join
-
 gene_expression_long <- gene_expression_data %>% 
   pivot_longer(
     cols = 2:158,
       names_to = "geoID",
-    values_to = "expression value") %>% 
+    values_to = "expression_value") %>% 
   rename(PROBEID = X)
 head(gene_expression_long)
+```
 
 
-# join covariate and expression data on geoid,  join gene name on probe id 
+
+combine data frames
+```{r}
+# join covariate and expression data on geoid, join gene name on probe id 
 pregnancy_data <- gene_expression_long %>% 
   left_join(covariate_cleaned, by = "geoID") %>% 
   left_join(gene_names, by = "PROBEID")
 
+# reorder columns 
+pregnancy_data <- pregnancy_data %>% 
+  relocate(GENE, .before = "expression_value")
+
 head(pregnancy_data)
 
-## for tomorrow, I want to move gene name to column before expression value
+# update preeclampsia and asthma status to be factors
+
+# first check to make sure there are only the two levels I think there are
+# aka no messy data like phildelphia or phillydelphia 
+
+unique(pregnancy_data$preg_preeclampsia)
+unique(pregnancy_data$mat_asthma)
+
+# sweet, only what was expected
+
+#now mutate to factors
+
+pregnancy_data <- pregnancy_data %>% 
+  mutate(
+    preg_preeclampsia = factor(preg_preeclampsia,
+                               levels = c("Normal", "Preeclampsia"), labels = c("Normal", "Preeclampsia")),
+    mat_asthma = factor(mat_asthma, 
+                        levels = c(0, 1), labels = c("Healthy", "Asthmatic"))
+  )
+
+
+# do we have any NAs in this data frame? (when originally viewing data I used the 
+# summary to look but always good to doublecheck)
+
+colSums(is.na(pregnancy_data))
+
+# all zeros, we good
 
 ```
 
+data frame looks okay, time to double check
+sorted original covariate data and pregnancy_data by geoid and the covariate values for gsm2264363 geoid matched correctly 
+searched for gsm2264363 in pregnancy_data and then sorted by probeid, value matched value for gsm2264363 and corresponding probe id (x) in original gene expression data
+
+
+sweet data is looking good, now to get set up for data vis!
+
+identify one gene: this is not my forte, how do I pick one? google preeclampsia gene expression I guess? or I could pick a random one
+I kind of want to visualize a gene that doe have an affect 
+
+found this study https://pmc.ncbi.nlm.nih.gov/articles/PMC2702488/ aka first return on google
+
+"These 58 genes constituted our list of differentially expressed genes (Table 2). This list of differentially expressed genes in preeclampsia includes genes with significant a priori interest for involvement in preeclampsia pathogenesis (e.g. LEP, FLT1, INHA and F2R). Other potential candidate genes with limited prior evidence for direct involvement in preeclampsia but which are known to regulate functional pathways of potential importance in preeclampsia pathogenesis were also identified (e.g. CYP11A, FCGR2B, HMOX1, PSG6, CDKN1C and TPBG." 
+
+search and find in gene names 
+we've got none of the a priori or of the regulating functional pathway ones
+back to the drawing board aka the og study 
+
+"We identified the “observable preeclampsia module” consisting of 143 genes with 552 connections, among them IL8 (also known as CXCL8), MX1, HLA-DP1A, HLA-DBQB1, MMP9, RPL31, ACTA2, IFI44L, and SERPING1, all of which were previously reported to be in association with preeclampsia (Supplemental Table 2)"
+
+the study i found on google probably didn't intersect with vitamin d? 
+
+so we could look at mx1!
+
+we will need 2 more for sub 2, lets find more 
+looking at table 5, search in gene names for the genes in red
+
+i thought this would streamline things, it is really a guessing game still 
+
+looking at supplemental table 2 (jci-126-89031-s004) this seemed interesting 
+uts2 (was currated, not actually sure what that means here, could check but probably won't)
+tmem176b (not currated, had a study linked)
+
+well SHANK2 has a fun name
+
+i could use ggplot to quiclky visualize these before I choose also 
+
+
+identify one continuous covariate: I feel like vitamin d is the covariate of interest tbh
+
+identify first categorical covariate: I feel like preeclampsia is the obvi choice here, especially given my above sleuthing (if you can call it that)
+
+identify second categorical covariate, that is derived from a continous covariate: hmm bmi and age are classic groupings, could classify as "geriatric" pregnancy or not (i don't like that term) -- just googled it, i guess thankfully they now call it advanced maternal age
+
+cool well i guess the choice is made, range looks like 18-38, should double check when maternal age was measured, probably at time of birth? looks like age at enrollment, that makes sense that they have gestational age at blood draw and gestational age at birth
+
+recap:
+
+gene: MX1
+continuous covariate: vitamin d
+categorical covariate: preeclampsia 
+derived categorical covariate: maternal age/ age pregnancy classification 
+
+
+what I need to create:
+
+histogram of gene expression for mx1
+
+scatterplot of vitamin d covariate vs. gene mx1 expression 
+
+boxplot of gene mx 1 expression separated by pre eclampsia and maternal age
+
+and then present on a single plot (i should double check, do we get to pick which one or is it pick a stick style?)
+
+
+I need to derive the maternal age into standard = <35, advanced maternal age >= 35
+
+should also find a ggplot theme that is professional 
+
+also should probably make a data frame that has only the data im interested in 
+maybe make data frame and then derive categorical so im processing less data, also to keep the clean whole data set intact
+
+start by subsetting just the gene you want and then create the category then ggplot your plots
+
+```{r}
+# subset data for selected gene, use pipes to also derive age category, make it a factor!!
+# make factor have reference as first level as best practice
+mx1_data <- pregnancy_data %>% 
+  filter(GENE == "MX1") %>%
+  mutate(
+    mat_age_group = if_else(mat_age_yrs >= 35, "Advanced Age", "Standard Age"),
+    mat_age_group = factor(mat_age_group,
+                               levels = c("Standard Age", "Advanced Age"), labels = c("Standard Age", "Advanced Age"))
+  )
+  
+head(mx1_data)
+
+
+
+ # ahh and i was searching the gene in the gene name file!! not the pregnancy data one!!
+# just cross searched the probe id in the expression data and it's not there 
+# well okay so i didn't mess up the joins, so i just need to pick a new gene 
+# going to psuedocode some plots and fix this mess tomorrow 
+```
+
+time to visualize
+```{r}
+
+
+# #histogram -- pub worthy needs labels and titles and theme, i threw some theme libraries in comments at the start and i can pick tomorrow 
+# 
+# ggplot(NEW GENE DATA GOES HERE, aes(x = expression_value)) +
+#   geom_histogram() +
+#   THEME GOES HERE () + 
+#   labs(
+#     title = "",
+#     x = "", 
+#     y = ""
+#   )
+# 
+# 
+# #scatterplot 
+# 
+# ggplot(NEW GENE DATA GOES HERE, aes(x = vitmin d y = expression_value)) +
+#  geom_point() +
+#   THEME GOES HERE () + 
+#   labs(
+#     title = "",
+#     x = "", 
+#     y = ""
+#   )
+# 
+# #boxplot
+
+
+```
