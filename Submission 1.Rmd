@@ -26,19 +26,19 @@ https://www.hopkinsmedicine.org/health/expert-qa/advanced-maternal-age
 
 ```{r}
 covariate_data <- read.csv("GSE85307_covar.csv")
-summary(covariate_data)
-str(covariate_data)
-head(covariate_data)
+# summary(covariate_data)
+# str(covariate_data)
+# head(covariate_data)
 
 gene_expression_data <- read.csv("GSE85307_geneExpression.csv")
-summary(gene_expression_data)
-str(gene_expression_data)
-head(gene_expression_data)
+# summary(gene_expression_data)
+# str(gene_expression_data)
+# head(gene_expression_data)
 
 gene_names <- read.csv("GSE85307_geneNames.csv")
-summary(gene_names)
-str(gene_names)
-head(gene_names)
+# summary(gene_names)
+# str(gene_names)
+# head(gene_names)
 
 ```
 what do I notice about the data?
@@ -78,13 +78,13 @@ covariate_cleaned <- covariate_data %>%
     mat_asthma = as.numeric(str_remove(mat_asthma, ".*: "))
   )
 
-head(covariate_cleaned)
+# head(covariate_cleaned)
 
 # need to make sure geoid is unique before I join the tables below
 # the statement is true aka there aren't duplicates so I shouldn't get duplicates
 # when I join the tables on geoid
 
-nrow(covariate_cleaned) == length(unique(covariate_cleaned$geoID))
+# nrow(covariate_cleaned) == length(unique(covariate_cleaned$geoID))
 
 ```
 
@@ -100,7 +100,7 @@ gene_expression_long <- gene_expression_data %>%
       names_to = "geoID",
     values_to = "expression_value") %>% 
   rename(PROBEID = X)
-head(gene_expression_long)
+# head(gene_expression_long)
 ```
 
 
@@ -116,7 +116,7 @@ pregnancy_data <- gene_expression_long %>%
 pregnancy_data <- pregnancy_data %>% 
   relocate(GENE, .before = "expression_value")
 
-head(pregnancy_data)
+# head(pregnancy_data)
 
 # update preeclampsia and asthma status to be factors
 
@@ -228,12 +228,12 @@ start by subsetting just the gene you want and then create the category then ggp
 shank2_data <- pregnancy_data %>% 
   filter(GENE == "SHANK2") %>%
   mutate(
-    mat_age_group = if_else(mat_age_yrs >= 35, "Advanced Age", "Standard Age"),
+    mat_age_group = if_else(mat_age_yrs >= 35, "Advanced Age >= 35", "Standard Age <35"),
     mat_age_group = factor(mat_age_group,
-                               levels = c("Standard Age", "Advanced Age"), labels = c("Standard Age", "Advanced Age"))
+                               levels = c("Standard Age <35", "Advanced Age >= 35"), labels = c("Standard Age <35", "Advanced Age >= 35"))
   )
   
-head(shank2_data)
+# head(shank2_data)
 
 
 
