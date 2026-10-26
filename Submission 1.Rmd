@@ -7,11 +7,12 @@ date: "2026-10-24"
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
+library(ggplot2)
 # library(hrbrthemes)
 # library(artyfarty)
 # library(ggthemr)
 # library(ggsci)
-# library(ggthemes)
+ library(ggthemes)
 ```
 
 used https://media.datacamp.com/legacy/image/upload/v1671056642/R_Text_Cheat_Sheet_3b4753f59a.png
@@ -224,15 +225,15 @@ start by subsetting just the gene you want and then create the category then ggp
 ```{r}
 # subset data for selected gene, use pipes to also derive age category, make it a factor!!
 # make factor have reference as first level as best practice
-mx1_data <- pregnancy_data %>% 
-  filter(GENE == "MX1") %>%
+shank2_data <- pregnancy_data %>% 
+  filter(GENE == "SHANK2") %>%
   mutate(
     mat_age_group = if_else(mat_age_yrs >= 35, "Advanced Age", "Standard Age"),
     mat_age_group = factor(mat_age_group,
                                levels = c("Standard Age", "Advanced Age"), labels = c("Standard Age", "Advanced Age"))
   )
   
-head(mx1_data)
+head(shank2_data)
 
 
 
@@ -245,31 +246,76 @@ head(mx1_data)
 time to visualize
 ```{r}
 
+# looking at previous classworks and data wrangling data vis class notes
 
-# #histogram -- pub worthy needs labels and titles and theme, i threw some theme libraries in comments at the start and i can pick tomorrow 
-# 
-# ggplot(NEW GENE DATA GOES HERE, aes(x = expression_value)) +
-#   geom_histogram() +
-#   THEME GOES HERE () + 
-#   labs(
-#     title = "",
-#     x = "", 
-#     y = ""
-#   )
-# 
-# 
-# #scatterplot 
-# 
-# ggplot(NEW GENE DATA GOES HERE, aes(x = vitmin d y = expression_value)) +
-#  geom_point() +
-#   THEME GOES HERE () + 
-#   labs(
-#     title = "",
-#     x = "", 
-#     y = ""
-#   )
-# 
-# #boxplot
+# colors based on ggthemes solarized 
+solar <- c(yellow  = "#b58900", orange = "#cb4b16", red  = "#dc322f",
+         magenta = "#d33682", violet = "#6c71c4", blue = "#268bd2",
+         cyan    = "#2aa198", green  = "#859900")
 
+#histogram - add line at median
+
+ggplot(shank2_data, aes(x = expression_value)) +
+  geom_histogram(bins = 20, fill = solar["blue"], color = "white", alpha = 0.9) +
+  geom_vline(aes(xintercept = median(expression_value, na.rm = TRUE)),
+               color = solar["orange"], linetype = "dashed", linewidth = 1) +
+  theme_economist() +
+  labs(
+  title = "Distribution of SHANK2 Gene Expression",
+  subtitle ="Dashed line = median",
+  x = "SHANK2 Expression",
+  y = "Number of Samples") +
+  theme(
+      plot.title    = element_text(face = "bold", size = 16),
+      plot.subtitle = element_text(size = 11, margin = margin(b = 10)),
+      axis.title.x  = element_text(margin = margin(t = 10)),
+      axis.title.y  = element_text(margin = margin(r = 10)),
+      plot.caption  = element_text(size = 8, hjust = 0)
+    )
+
+
+#scatterplot
+
+ggplot(shank2_data, aes(x = mat_vitD, y = expression_value)) +
+  geom_point(color = solar["blue"], alpha = 0.6, size = 2) +
+  geom_smooth(method = "lm", formula = y ~ x, se = TRUE,
+              color = solar["red"], fill = solar["orange"], alpha = 0.2, linewidth = 1) +
+  theme_economist() +
+  labs(
+    title = "SHANK2 Expression vs. Maternal Vitamin D",
+    x = "Maternal Vitamin D (ng/mL)", 
+    y = "SHANK2 Expression") +
+  theme(
+    plot.title    = element_text(face = "bold", size = 16),
+    plot.subtitle = element_text(size = 11, margin = margin(b = 10)),
+    axis.title.x  = element_text(margin = margin(t = 10)),
+    axis.title.y  = element_text(margin = margin(r = 10)),
+    plot.caption  = element_text(size = 8, hjust = 0)
+  )
+
+#boxplot
+ggplot(shank2_data, aes(x = preg_preeclampsia, y = expression_value, fill = mat_age_group)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.8, width = 0.7,
+               position = position_dodge(width = 0.8)) +
+  geom_point(position = position_jitterdodge(jitter.width = 0.15,
+                                             dodge.width  = 0.8,),
+             alpha = 0.5, size = 1.0, color = solar["violet"]) +
+  scale_fill_solarized(accent = "blue") +
+  theme_economist() +
+  labs(
+    title    = "SHANK2 Expression by Pregnancy Outcome and Maternal Age",
+    subtitle = "Points represent individual samples",
+    x        = "Pregnancy Outcome",
+    y        = "SHANK2 Expression",
+    fill     = "Maternal Age Group"
+  ) +
+  theme(
+    legend.position = "bottom",
+    legend.title    = element_text(face = "bold"),
+    plot.title      = element_text(face = "bold", size = 16),
+    plot.subtitle   = element_text(size = 11, margin = margin(b = 10)),
+    axis.title.x    = element_text(margin = margin(t = 10)),
+    axis.title.y    = element_text(margin = margin(r = 10))
+  )
 
 ```
