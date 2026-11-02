@@ -9,10 +9,11 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(ggplot2)
 # library(hrbrthemes)
-# library(artyfarty)
+library(artyfarty)
 # library(ggthemr)
 # library(ggsci)
- library(ggthemes)
+library(ggthemes)
+library(patchwork)
 ```
 
 used https://media.datacamp.com/legacy/image/upload/v1671056642/R_Text_Cheat_Sheet_3b4753f59a.png
@@ -21,6 +22,10 @@ https://dplyr.tidyverse.org/reference/across.html
 https://rstudio.github.io/cheatsheets/pngs/data-transformation.png
 https://pmc.ncbi.nlm.nih.gov/articles/PMC2702488/
 https://www.hopkinsmedicine.org/health/expert-qa/advanced-maternal-age
+https://r-graph-gallery.com/package/patchwork.html
+https://patchwork.data-imaginist.com/reference/wrap_plots.html
+I also used chat gpt to help me figure out how to wrap the plots in a function
+I needed to create lists to store the plots in before I looped through and then store each plot in the list at the end and then wrap the lists. It also helped me change a + to an & to get the legend to be on the bottom, apparently that is part of the patchwork package and it tells r to put the legend on the bottom for all plots, not just the last one 
 
 ## Read in data, look at it 
 
@@ -41,31 +46,13 @@ gene_names <- read.csv("GSE85307_geneNames.csv")
 # head(gene_names)
 
 ```
-what do I notice about the data?
-
-the covariate data has one subject per row and the columns are the covariates (long data)
-the data is character strings, will need to remove text and keep numerical values
-will also need to code for preeclampsia vs. normal and asthmatic vs. healthy
-no missing values
-
-the gene expression data has one subject per column, the rows are the probe ids (wide data)
-data is numerical, each column matches a geoid from covariate data (how to match the data)
-
-the gene name data has the gene name corresponding to the probe id (how to match the data)
-
-will need to pivot expression data to be longer
-
-
 
 ## Cleaning data 
-
-
 ```{r}
 # clean covariate data to remove labels 
 # update data types
 # 0 = healthy, 1= asthmatic (should I replace num with char?, maybe down the road)
 # batch date is still char, note date
-
 covariate_cleaned <- covariate_data %>% 
   mutate(
     mat_age_yrs = as.numeric(str_remove(mat_age_yrs, ".*: ")),
@@ -90,8 +77,7 @@ covariate_cleaned <- covariate_data %>%
 
 
 
-Pivot gene expression data longer
-
+## Pivot gene expression data longer
 ```{r}
 # pivot gene expression data, rename x to probe id for future join
 gene_expression_long <- gene_expression_data %>% 
@@ -105,7 +91,7 @@ gene_expression_long <- gene_expression_data %>%
 
 
 
-combine data frames
+## Combine data frames
 ```{r}
 # join covariate and expression data on geoid, join gene name on probe id 
 pregnancy_data <- gene_expression_long %>% 
@@ -119,17 +105,11 @@ pregnancy_data <- pregnancy_data %>%
 # head(pregnancy_data)
 
 # update preeclampsia and asthma status to be factors
-
 # first check to make sure there are only the two levels I think there are
-# aka no messy data like phildelphia or phillydelphia 
-
 unique(pregnancy_data$preg_preeclampsia)
 unique(pregnancy_data$mat_asthma)
 
-# sweet, only what was expected
-
 #now mutate to factors
-
 pregnancy_data <- pregnancy_data %>% 
   mutate(
     preg_preeclampsia = factor(preg_preeclampsia,
@@ -138,13 +118,8 @@ pregnancy_data <- pregnancy_data %>%
                         levels = c(0, 1), labels = c("Healthy", "Asthmatic"))
   )
 
-
-# do we have any NAs in this data frame? (when originally viewing data I used the 
-# summary to look but always good to doublecheck)
-
+# do we have any NAs in this data frame?
 colSums(is.na(pregnancy_data))
-
-# all zeros, we good
 
 ```
 
@@ -153,75 +128,8 @@ sorted original covariate data and pregnancy_data by geoid and the covariate val
 searched for gsm2264363 in pregnancy_data and then sorted by probeid, value matched value for gsm2264363 and corresponding probe id (x) in original gene expression data
 
 
-sweet data is looking good, now to get set up for data vis!
 
-identify one gene: this is not my forte, how do I pick one? google preeclampsia gene expression I guess? or I could pick a random one
-I kind of want to visualize a gene that doe have an affect 
-
-found this study https://pmc.ncbi.nlm.nih.gov/articles/PMC2702488/ aka first return on google
-
-"These 58 genes constituted our list of differentially expressed genes (Table 2). This list of differentially expressed genes in preeclampsia includes genes with significant a priori interest for involvement in preeclampsia pathogenesis (e.g. LEP, FLT1, INHA and F2R). Other potential candidate genes with limited prior evidence for direct involvement in preeclampsia but which are known to regulate functional pathways of potential importance in preeclampsia pathogenesis were also identified (e.g. CYP11A, FCGR2B, HMOX1, PSG6, CDKN1C and TPBG." 
-
-search and find in gene names 
-we've got none of the a priori or of the regulating functional pathway ones
-back to the drawing board aka the og study 
-
-"We identified the “observable preeclampsia module” consisting of 143 genes with 552 connections, among them IL8 (also known as CXCL8), MX1, HLA-DP1A, HLA-DBQB1, MMP9, RPL31, ACTA2, IFI44L, and SERPING1, all of which were previously reported to be in association with preeclampsia (Supplemental Table 2)"
-
-the study i found on google probably didn't intersect with vitamin d? 
-
-so we could look at mx1!
-
-we will need 2 more for sub 2, lets find more 
-looking at table 5, search in gene names for the genes in red
-
-i thought this would streamline things, it is really a guessing game still 
-
-looking at supplemental table 2 (jci-126-89031-s004) this seemed interesting 
-uts2 (was currated, not actually sure what that means here, could check but probably won't)
-tmem176b (not currated, had a study linked)
-
-well SHANK2 has a fun name
-
-i could use ggplot to quiclky visualize these before I choose also 
-
-
-identify one continuous covariate: I feel like vitamin d is the covariate of interest tbh
-
-identify first categorical covariate: I feel like preeclampsia is the obvi choice here, especially given my above sleuthing (if you can call it that)
-
-identify second categorical covariate, that is derived from a continous covariate: hmm bmi and age are classic groupings, could classify as "geriatric" pregnancy or not (i don't like that term) -- just googled it, i guess thankfully they now call it advanced maternal age
-
-cool well i guess the choice is made, range looks like 18-38, should double check when maternal age was measured, probably at time of birth? looks like age at enrollment, that makes sense that they have gestational age at blood draw and gestational age at birth
-
-recap:
-
-gene: MX1
-continuous covariate: vitamin d
-categorical covariate: preeclampsia 
-derived categorical covariate: maternal age/ age pregnancy classification 
-
-
-what I need to create:
-
-histogram of gene expression for mx1
-
-scatterplot of vitamin d covariate vs. gene mx1 expression 
-
-boxplot of gene mx 1 expression separated by pre eclampsia and maternal age
-
-and then present on a single plot (i should double check, do we get to pick which one or is it pick a stick style?)
-
-
-I need to derive the maternal age into standard = <35, advanced maternal age >= 35
-
-should also find a ggplot theme that is professional 
-
-also should probably make a data frame that has only the data im interested in 
-maybe make data frame and then derive categorical so im processing less data, also to keep the clean whole data set intact
-
-start by subsetting just the gene you want and then create the category then ggplot your plots
-
+## Subset selected gene and create the categorical variable 
 ```{r}
 # subset data for selected gene, use pipes to also derive age category, make it a factor!!
 # make factor have reference as first level as best practice
@@ -239,25 +147,16 @@ shank2_data <- pregnancy_data %>%
 # calculate sample size for graphs, best practice to exclude NA's 
 n_samples <- sum(!is.na(shank2_data$expression_value))
 
-
- # ahh and i was searching the gene in the gene name file!! not the pregnancy data one!!
-# just cross searched the probe id in the expression data and it's not there 
-# well okay so i didn't mess up the joins, so i just need to pick a new gene 
-# going to psuedocode some plots and fix this mess tomorrow 
 ```
 
-time to visualize
+## Create plots
 ```{r}
-
-# looking at previous classworks and data wrangling data vis class notes
-
 # colors based on ggthemes solarized 
 solar <- c(yellow  = "#b58900", orange = "#cb4b16", red  = "#dc322f",
          magenta = "#d33682", violet = "#6c71c4", blue = "#268bd2",
          cyan    = "#2aa198", green  = "#859900")
 
 #histogram - add line at median
-
 ggplot(shank2_data, aes(x = expression_value)) +
   geom_histogram(bins = 20, fill = solar["blue"], color = "white", alpha = 0.9) +
   geom_vline(aes(xintercept = median(expression_value, na.rm = TRUE)),
@@ -279,7 +178,6 @@ ggplot(shank2_data, aes(x = expression_value)) +
 # ggsave("SHANK2_Histogram.png", width = 6, height = 4, dpi = 300)
 
 #scatterplot
-
 ggplot(shank2_data, aes(x = mat_vitD, y = expression_value)) +
   geom_point(color = solar["blue"], alpha = 0.6, size = 2) +
   geom_smooth(method = "lm", formula = y ~ x, se = TRUE,
@@ -326,21 +224,16 @@ ggplot(shank2_data, aes(x = preg_preeclampsia, y = expression_value, fill = mat_
     axis.title.y    = element_text(margin = margin(r = 10))
   )
 
-ggsave("SHANK2_Boxplot2.png", width = 6, height = 4, dpi = 300)
+# ggsave("SHANK2_Boxplot2.png", width = 6, height = 4, dpi = 300)
 
 ```
-
-things to fix: include sample sizes, change colors, fix legend title to say years, set seed for jitter, make sure you say what the visual elements are --I think best practice would be to put sample size for each box in the box plot, for rn I think the overlay of individuls is enough but stretch goal is to figure out how to do that 
-
-sub 2:
+## Submission 2:
 
 possible genes to pick:
-
 prickle2
 prickle3
 fig4
 set
-
 uts2
 tmem176b 
 
@@ -355,9 +248,14 @@ Your function should take the following inputs:
 Your function should loop through all genes provided to it to produce the plots from your first
 submission (including 1 continuous covariate and 2 categorical covariates).
 
-build function
-
+## Build function
 ```{r}
+
+# make pretty visuals using artyfarty package
+# define palette
+# ft_pal <- pal("ft")
+fm_pal <- pal("few_medium")
+
 
 # define list of genes
 genes_of_interest <- c("SHANK2", "PRICKLE3", "FIG4")
@@ -365,8 +263,13 @@ genes_of_interest <- c("SHANK2", "PRICKLE3", "FIG4")
 # define function to create plots for gene list
 build_gene_plots <- function(df, list){
   
-  # loop through the genes in the list 
-  for (gene in genes_of_interest) {
+  # # define list to store plots in 
+  # all_hists   <- list()
+  # all_scatts  <- list()
+  # all_boxps   <- list()
+ 
+   # loop through the genes in the gene list 
+  for (gene in list) {
     
     # for selected gene, subset the data and create maternal age categorical variable 
     gene_data <- df %>% 
@@ -380,42 +283,50 @@ build_gene_plots <- function(df, list){
       
     # calculate sample size for graphs, best practice to exclude NA's
     n_samples <- sum(!is.na(gene_data$expression_value))
-  
     
+    # report statistical values on plots 
+      # calculate the median for histogram 
+      gene_median <- round(median(gene_data$expression_value, na.rm = TRUE), 2)
+      # calculate the correlation for scatterplot
+      correlation <- round(cor(gene_data$mat_vitD, gene_data$expression_value), 2)
+  
     # build histogram
     gene_hist <- ggplot(gene_data, aes(x = expression_value)) +
-      geom_histogram(bins = 20, fill = solar["blue"], color = "white", alpha = 0.9) +
+      geom_histogram(bins = 20, fill = fm_pal[7], color = fm_pal[5], alpha = 0.9) +
       geom_vline(aes(xintercept = median(expression_value, na.rm = TRUE)),
-                   color = solar["orange"], linetype = "dashed", linewidth = 1) +
-      theme_economist() +
+                   color = fm_pal[3], linetype = "dashed", linewidth = .8) +
+    theme_ft() +
       labs(
       title = paste("Distribution of", gene, "Gene Expression"),
-      subtitle =paste0("Dashed line = median; n = ", n_samples),
+      subtitle =paste0("n = ", n_samples),
       x = paste0(gene, "Expression"),
       y = "Number of Samples") +
+      annotate("text", x = gene_median, y = Inf, label = paste("Median:", gene_median), 
+               hjust = 1.1, vjust = 1.5, fontface = "italic", size = 4) +
       theme(
           plot.title    = element_text(face = "bold", size = 16),
-          plot.subtitle = element_text(size = 11, margin = margin(b = 10)),
+          plot.subtitle = element_text(size = 11, margin = margin(b = 10), hjust = 0.5),
           axis.title.x  = element_text(margin = margin(t = 10)),
           axis.title.y  = element_text(margin = margin(r = 10)),
           plot.caption  = element_text(size = 8, hjust = 0)
         )
     
-    
     # build scatterplot 
     gene_scatt <- ggplot(gene_data, aes(x = mat_vitD, y = expression_value)) +
-      geom_point(color = solar["blue"], alpha = 0.6, size = 2) +
+      geom_point(color = fm_pal[7], alpha = 0.6, size = 2) +
       geom_smooth(method = "lm", formula = y ~ x, se = TRUE,
-                  color = solar["red"], fill = solar["orange"], alpha = 0.2, linewidth = 1) +
-      theme_economist() +
+                  color = fm_pal[3], fill = fm_pal[5], alpha = 0.3, linewidth = .8) +
+      theme_ft() +
       labs(
         title = paste(gene, "Expression vs. Maternal Vitamin D"),
-        subtitle = paste0("Line = linear fit with 95% confidence intervals; n = ", n_samples),
+        subtitle = paste0("linear fit with 95% confidence intervals; n = ", n_samples),
         x = "Maternal Vitamin D (ng/mL)", 
         y = paste0(gene, " Expression")) +
+      annotate("text", x = Inf, y = Inf, label = paste("r =", correlation), 
+               hjust = 2.5, vjust = 1.5, fontface = "italic", size = 4) +
       theme(
         plot.title    = element_text(face = "bold", size = 16),
-        plot.subtitle = element_text(size = 11, margin = margin(b = 10)),
+        plot.subtitle = element_text(size = 11, margin = margin(b = 10), hjust = 0.5),
         axis.title.x  = element_text(margin = margin(t = 10)),
         axis.title.y  = element_text(margin = margin(r = 10)),
         plot.caption  = element_text(size = 8, hjust = 0)
@@ -423,17 +334,17 @@ build_gene_plots <- function(df, list){
     
     # build boxplot
     gene_boxp <- ggplot(gene_data, aes(x = preg_preeclampsia, y = expression_value, fill = mat_age_group)) +
-      geom_boxplot(outlier.shape = NA, alpha = 0.8, width = 0.7,
+      geom_boxplot(outlier.shape = NA, alpha = 0.8, width = 0.7,linewidth = .5,
                    position = position_dodge(width = 0.8)) +
       geom_point(position = position_jitterdodge(jitter.width = 0.15,
                                                  dodge.width  = 0.8,
                                                  seed = 33),
-                 alpha = 0.5, size = 1.0, color = solar["violet"]) +
-      scale_fill_solarized(accent = "blue") +
-      theme_economist() +
+                 alpha = 0.9, size = 1.0, color = fm_pal[5]) +
+      scale_fill_manual(values = c(fm_pal[7], fm_pal[3])) +
+      theme_ft() +
       labs(
         title    = paste(gene,"Expression by Pregnancy Outcome and Maternal Age"),
-        subtitle = paste0("Points represent individual samples; n = ", n_samples),
+        subtitle = paste0("n = ", n_samples),
         x        = "Pregnancy Outcome",
         y        = paste(gene, "Expression"),
         fill     = "Maternal Age Group"
@@ -442,29 +353,51 @@ build_gene_plots <- function(df, list){
         legend.position = "bottom",
         legend.title    = element_text(face = "bold"),
         plot.title      = element_text(face = "bold", size = 14),
-        plot.subtitle   = element_text(size = 11, margin = margin(b = 10)),
+        plot.subtitle   = element_text(size = 11, margin = margin(b = 10), hjust = 0.5),
         axis.title.x    = element_text(margin = margin(t = 10)),
         axis.title.y    = element_text(margin = margin(r = 10))
       )
     
+    # # store plots in lists
+    # all_hists[[gene]]   <- gene_hist
+    # all_scatts[[gene]]  <- gene_scatt
+    # all_boxps[[gene]]   <- gene_boxp
+    # 
+    # # wrap the plot lists
+    # combined_hists   <- wrap_plots(all_hists, ncol = 3)
+    # combined_scatts  <- wrap_plots(all_scatts, ncol = 3)
+    # combined_boxps   <- wrap_plots(all_boxps, ncol = 3) + 
+    #                     plot_layout(guides = "collect") &
+    #                     theme(legend.position = "bottom")
     
-    # return plots
+    
+    # # return individual plots
     print(gene_hist)
     print(gene_scatt)
     print(gene_boxp)
     
-    # save plots once
-    ggsave(paste0("S2_", gene, "_Histogram.png"), plot = gene_hist, width = 6, height = 4, dpi = 300)
-    ggsave(paste0("S2_", gene, "_Scatterplot.png"), plot = gene_scatt, width = 6, height = 4, dpi = 300)
-    ggsave(paste0("S2_", gene, "_Boxplot.png"), plot = gene_boxp, width = 6, height = 4, dpi = 300)
+    # # save individual plots once
+    # ggsave(paste0("S2_", gene, "_Histogram.png"), plot = gene_hist, width = 6, height = 4, dpi = 300)
+    # ggsave(paste0("S2_", gene, "_Scatterplot.png"), plot = gene_scatt, width = 6, height = 4, dpi = 300)
+    # ggsave(paste0("S2_", gene, "_Boxplot.png"), plot = gene_boxp, width = 6, height = 4, dpi = 300)
+    
+   
+    # # return combined plots
+    # print(combined_hists)
+    # print(combined_scatts)
+    # print(combined_boxps)
+    
+    # # save combines plots once
+    # ggsave("S2_all_Histograms.png", plot = combined_hists, width = 20, height = 5, dpi = 300)
+    # ggsave("S2_all_Scatterplots.png", plot = combined_scatts, width = 20, height = 5, dpi = 300)
+    # ggsave("S2_all_Boxplots.png", plot = combined_boxps, width = 20, height = 5, dpi = 300)
+    
+    
   }
 }
-
 # run function
   build_gene_plots(pregnancy_data,genes_of_interest)
   
-  
-  # if time, update colors/theme, play more with data vis, also figure out how to display all the plots of one kind next to each other, also clean up comments/all of submission 1
-  
-  # creats slides 
+# possible strech goal for next submission -- how can I get r to display the
+# sample size for each boxplot box
 ```
