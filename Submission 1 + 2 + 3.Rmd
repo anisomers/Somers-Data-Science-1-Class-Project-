@@ -15,6 +15,9 @@ library(artyfarty)
 library(ggthemes)
 library(patchwork)
 library(table1)
+# library(ggtext)
+library(pheatmap)
+library(viridis)
 ```
 
 **Resources Used** 
@@ -28,6 +31,7 @@ https://r-graph-gallery.com/package/patchwork.html
 https://patchwork.data-imaginist.com/reference/wrap_plots.html
 I also used chat gpt to help me figure out how to wrap the plots in a function
 I needed to create lists to store the plots in before I looped through and then store each plot in the list at the end and then wrap the lists. It also helped me change a + to an & to get the legend to be on the bottom, apparently that is part of the patchwork package and it tells r to put the legend on the bottom for all plots, not just the last one 
+Carly helped me troubleshoot my heatmap 
 
 ## Read in data and visualize 
 ```{r}
@@ -245,7 +249,8 @@ fm_pal <- pal("few_medium")
 
 
 # moved deriving categorical variable out of loop so it is in the data frame
-# so when I build table 1, it includes that data 
+# so when I build table 1, it includes that data (this was incorrect)
+# leaving it outside loop bc it still works 
 # for selected gene, subset the data and create maternal age categorical variable 
 pregnancy_data <- pregnancy_data %>% 
   mutate(mat_age_group = if_else(mat_age_yrs >= 35, "Advanced Age >= 35 Years", 
@@ -500,8 +505,15 @@ unique way. Be creative! See list at end of document for plot types that would n
 # for safety even tho probably not needed
 # create duplicate incase relabeling messes up data 
 
-pregnancy_table_data <- pregnancy_data
-
+# create maternal age categorical variable
+pregnancy_table_data <- covariate_cleaned %>% 
+  mutate(mat_age_group = if_else(mat_age_yrs >= 35, "Advanced Age >= 35 Years", 
+                                 "Standard Age <35 Years"),
+         mat_age_group = factor(mat_age_group,
+                                levels = c("Standard Age <35 Years", 
+                                           "Advanced Age >= 35 Years"), 
+                                labels = c("Standard Age <35 Years", 
+                                           "Advanced Age >= 35 Years")))
 
 # relabel covariate columns for table
 label(pregnancy_table_data$mat_age_yrs) <- "Maternal Age (years)"
@@ -515,15 +527,58 @@ pregnancy_table1 <- table1(~ mat_age_yrs + mat_vitD + mat_BMI + mat_age_group + 
                            data = pregnancy_table_data)
 
 pregnancy_table1
-
-# table is printing light text on light background - not really an issue for
-# this but deal with later
-# n looks off
+```
 
 
-# ahh i did not need to spend all the time changing my function above
-# because this is running on my long data table.......
-# need to use the covariate cleaned....
-# well I know where to start next time 
+## build heatmap 
+
+```{r}
+# pick out genes
+heat_map_genes <- c("SHANK2", "PRICKLE2", "PRICKLE3", "FIG4", "NAAA", "EVL", "SET", "SUN3", "JAM2", "ME3")
+
+# make new data frame
+heat_map_df <- pregnancy_data %>%
+  filter(GENE %in% heat_map_genes) %>%
+  select(geoID, GENE, expression_value) %>%
+  pivot_wider(names_from = geoID, values_from = expression_value) %>%
+  column_to_rownames("GENE")
+
+# prepare annotation bars and rename
+column_annot <- pregnancy_data %>%
+  select(geoID, preg_preeclampsia, mat_age_group) %>%
+  distinct(geoID, .keep_all = TRUE) %>%
+  column_to_rownames("geoID") %>% 
+  rename(
+    "Pregnancy Outcome" = preg_preeclampsia, 
+    "Maternal Age Group" = mat_age_group)
+  
+# define colors
+annotation_colorp <- list(
+  "Pregnancy Outcome" = c("Normal" = "#f896d8", "Preeclampsia" = "#72195a"),
+  "Maternal Age Group" = c("Standard Age <35 Years" = "#b298dc", "Advanced Age >= 35 Years" = "#b9faf8"))
+
+
+# build heat map 
+# hide ids but show gene name
+
+pheatmap(
+  t(scale(t(heat_map_df))), #helps normalize genes to each other, and mean centers
+  show_rownames = TRUE,         
+  show_colnames = FALSE,          
+  annotation_col = column_annot,  
+  annotation_colors = annotation_colorp,
+  clustering_distance_cols = "euclidean", 
+  clustering_method = "ward.D2",
+  color = viridis(100, option = "G"),
+  main = "Heatmap of Gene Expression by Pregnancy Outcome and Age"
+)
+
+
+# need to italicize gene names
+# set in latex 
+# change margins
+
+#pictogram/ waffle 
+
 ```
 
