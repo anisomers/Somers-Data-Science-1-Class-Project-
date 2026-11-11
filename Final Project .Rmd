@@ -1,0 +1,741 @@
+---
+title: "Combined Submissions 1 + 2"
+output: pdf_document
+date: "2026-11-02"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(artyfarty)
+library(ggthemes)
+library(patchwork)
+library(table1)
+library(pheatmap)
+library(viridis)
+library(waffle)
+library(extrafont)
+```
+
+**Resources Used** 
+https://media.datacamp.com/legacy/image/upload/v1671056642/R_Text_Cheat_Sheet_3b4753f59a.png
+https://communicate-data-with-r.netlify.app/docs/tidyverse/
+https://dplyr.tidyverse.org/reference/across.html
+https://rstudio.github.io/cheatsheets/pngs/data-transformation.png
+https://pmc.ncbi.nlm.nih.gov/articles/PMC2702488/
+https://www.hopkinsmedicine.org/health/expert-qa/advanced-maternal-age
+https://r-graph-gallery.com/package/patchwork.html
+https://patchwork.data-imaginist.com/reference/wrap_plots.html
+I also used chat.dartmouth to help me figure out how to wrap the plots in a function
+I needed to create lists to store the plots in before I looped through and then store each plot in the list at the end and then wrap the lists. It also helped me change a + to an & to get the legend to be on the bottom, apparently that is part of the patchwork package and it tells r to put the legend on the bottom for all plots, not just the last one 
+Carly helped me troubleshoot my heatmap 
+Lauren Tuzik helped me understand how to italicize my gene names
+https://r-graph-gallery.com/waffle.html
+https://github.com/hrbrmstr/waffle
+https://www.rdocumentation.org/packages/waffle/versions/1.0.2/topics/waffle
+https://search.r-project.org/CRAN/refmans/waffle/html/geom_pictogram.html
+I used chat.dartmouth to help me trouble shoot my waffle plot and pictogram
+
+## Read in data and visualize 
+```{r}
+covariate_data <- read.csv("GSE85307_covar.csv")
+# summary(covariate_data)
+# str(covariate_data)
+# head(covariate_data)
+
+gene_expression_data <- read.csv("GSE85307_geneExpression.csv")
+# summary(gene_expression_data)
+# str(gene_expression_data)
+# head(gene_expression_data)
+
+gene_names <- read.csv("GSE85307_geneNames.csv")
+# summary(gene_names)
+# str(gene_names)
+# head(gene_names)
+
+```
+
+## Cleaning data 
+```{r}
+# clean covariate data to remove labels
+# update data types
+# 0 = healthy, 1= asthmatic (should I replace num with char?, maybe down the road)
+# batch date is still char, note date
+covariate_cleaned <- covariate_data %>%
+  mutate(
+    mat_age_yrs = as.numeric(str_remove(mat_age_yrs, ".*: ")),
+    preg_preeclampsia = str_remove(preg_preeclampsia, ".*: "),
+    delivery_gestAge_wks = as.numeric(str_remove(delivery_gestAge_wks, ".*: ")),
+    sampleCollection_gestAge_wks = as.numeric(str_remove(sampleCollection_gestAge_wks, ".*: ")),
+    batch_Microarray = (str_remove(batch_Microarray, ".*: ")),
+    mat_BMI = as.numeric(str_remove(mat_BMI, ".*: ")),
+    mat_vitD = as.numeric(str_remove(mat_vitD, ".*: ")),
+    mat_asthma = as.numeric(str_remove(mat_asthma, ".*: "))
+  )
+
+# head(covariate_cleaned)
+
+# need to make sure geoid is unique before I join the tables below
+# the statement is true aka there aren't duplicates so I shouldn't get duplicates
+# when I join the tables on geoid
+
+# nrow(covariate_cleaned) == length(unique(covariate_cleaned$geoID))
+
+```
+
+## Pivot gene expression data longer
+```{r}
+# pivot gene expression data, rename x to probe id for future join
+gene_expression_long <- gene_expression_data %>%
+  pivot_longer(
+    cols = 2:158,
+      names_to = "geoID",
+    values_to = "expression_value") %>%
+  rename(PROBEID = X)
+# head(gene_expression_long)
+```
+
+## Combine data frames
+```{r}
+# join covariate and expression data on geoid, join gene name on probe id
+pregnancy_data <- gene_expression_long %>%
+  left_join(covariate_cleaned, by = "geoID") %>%
+  left_join(gene_names, by = "PROBEID")
+
+# reorder columns
+pregnancy_data <- pregnancy_data %>%
+  relocate(GENE, .before = "expression_value")
+
+# head(pregnancy_data)
+
+# update preeclampsia and asthma status to be factors
+# first check to make sure there are only the two levels I think there are
+# unique(pregnancy_data$preg_preeclampsia)
+# unique(pregnancy_data$mat_asthma)
+
+# now mutate to factors
+pregnancy_data <- pregnancy_data %>%
+  mutate(
+    preg_preeclampsia = factor(preg_preeclampsia,
+                               levels = c("Normal", "Preeclampsia"), 
+                               labels = c("Normal", "Preeclampsia")),
+    mat_asthma = factor(mat_asthma,
+                        levels = c(0, 1), labels = c("Healthy", "Asthmatic"))
+  )
+
+# do we have any NAs in this data frame?
+# colSums(is.na(pregnancy_data))
+
+```
+## Subset selected gene and create the categorical variable 
+```{r}
+# # subset data for selected gene, derive age category, make it a factor
+# # make factor have reference as first level as best practice
+# shank2_data <- pregnancy_data %>% 
+#   filter(GENE == "SHANK2") %>%
+#   mutate(
+#     mat_age_group = if_else(mat_age_yrs >= 35, "Advanced Age >= 35 Years", 
+#                             "Standard Age <35 Years"),
+#     mat_age_group = factor(mat_age_group,
+#                            levels = c("Standard Age <35 Years", 
+#                                       "Advanced Age >= 35 Years"), 
+#                            labels = c("Standard Age <35 Years", 
+#                                       "Advanced Age >= 35 Years"))
+#   )
+#   
+# # head(shank2_data)
+# 
+# # calculate sample size for graphs, best practice to exclude NA's 
+# n_samples <- sum(!is.na(shank2_data$expression_value))
+
+```
+
+## Create plots
+```{r}
+# # colors based on ggthemes solarized 
+# solar <- c(yellow  = "#b58900", orange = "#cb4b16", red  = "#dc322f",
+#          magenta = "#d33682", violet = "#6c71c4", blue = "#268bd2",
+#          cyan    = "#2aa198", green  = "#859900")
+# 
+# #histogram - add line at median
+# ggplot(shank2_data, aes(x = expression_value)) +
+#   geom_histogram(bins = 20, fill = solar["blue"], color = "white", alpha = 0.9) +
+#   geom_vline(aes(xintercept = median(expression_value, na.rm = TRUE)),
+#                color = solar["orange"], linetype = "dashed", linewidth = 1) +
+#   theme_economist() +
+#   labs(
+#   title = "Distribution of SHANK2 Gene Expression",
+#   subtitle =paste0("Dashed line = median; n = ", n_samples),
+#   x = "SHANK2 Expression",
+#   y = "Number of Samples") +
+#   theme(
+#       plot.title    = element_text(face = "bold", size = 16),
+#       plot.subtitle = element_text(size = 11, margin = margin(b = 10)),
+#       axis.title.x  = element_text(margin = margin(t = 10)),
+#       axis.title.y  = element_text(margin = margin(r = 10)),
+#       plot.caption  = element_text(size = 8, hjust = 0)
+#     )
+# 
+# # ggsave("SHANK2_Histogram.png", width = 6, height = 4, dpi = 300)
+# 
+# #scatterplot
+# ggplot(shank2_data, aes(x = mat_vitD, y = expression_value)) +
+#   geom_point(color = solar["blue"], alpha = 0.6, size = 2) +
+#   geom_smooth(method = "lm", formula = y ~ x, se = TRUE,
+#               color = solar["red"], fill = solar["orange"], alpha = 0.2, linewidth = 1) +
+#   theme_economist() +
+#   labs(
+#     title = "SHANK2 Expression vs. Maternal Vitamin D",
+#     subtitle = paste0("Line = linear fit with 95% confidence intervals; n = ", n_samples),
+#     x = "Maternal Vitamin D (ng/mL)", 
+#     y = "SHANK2 Expression") +
+#   theme(
+#     plot.title    = element_text(face = "bold", size = 16),
+#     plot.subtitle = element_text(size = 11, margin = margin(b = 10)),
+#     axis.title.x  = element_text(margin = margin(t = 10)),
+#     axis.title.y  = element_text(margin = margin(r = 10)),
+#     plot.caption  = element_text(size = 8, hjust = 0)
+#   )
+# 
+# # ggsave("SHANK2_Scatterplot.png", width = 6, height = 4, dpi = 300)
+# 
+# #boxplot
+# ggplot(shank2_data, aes(x = preg_preeclampsia, y = expression_value, fill = mat_age_group)) +
+#   geom_boxplot(outlier.shape = NA, alpha = 0.8, width = 0.7,
+#                position = position_dodge(width = 0.8)) +
+#   geom_point(position = position_jitterdodge(jitter.width = 0.15,
+#                                              dodge.width  = 0.8,
+#                                              seed = 33),
+#              alpha = 0.5, size = 1.0, color = solar["violet"]) +
+#   scale_fill_solarized(accent = "blue") +
+#   theme_economist() +
+#   labs(
+#     title    = "SHANK2 Expression by Pregnancy Outcome and Maternal Age",
+#     subtitle = paste0("Points represent individual samples; n = ", n_samples),
+#     x        = "Pregnancy Outcome",
+#     y        = "SHANK2 Expression",
+#     fill     = "Maternal Age Group"
+#   ) +
+#   theme(
+#     legend.position = "bottom",
+#     legend.title    = element_text(face = "bold"),
+#     plot.title      = element_text(face = "bold", size = 14),
+#     plot.subtitle   = element_text(size = 11, margin = margin(b = 10)),
+#     axis.title.x    = element_text(margin = margin(t = 10)),
+#     axis.title.y    = element_text(margin = margin(r = 10))
+#   )
+# 
+# # ggsave("SHANK2_Boxplot2.png", width = 6, height = 4, dpi = 300)
+
+```
+## Submission 2:
+
+possible genes to pick:
+prickle2
+prickle3
+fig4
+set
+uts2
+tmem176b 
+
+I feel like shank32, prickle3, and fig4 is a fun combo. Also since im building a function, I can always change which genes are in the list and reevaluate which genes I want to use
+
+## Build function
+```{r}
+# define palette
+fm_pal <- pal("few_medium")
+
+# moved deriving categorical variable out of loop so it is in the data frame
+# for selected gene, subset the data and create maternal age categorical variable 
+pregnancy_data <- pregnancy_data %>% 
+  mutate(mat_age_group = if_else(mat_age_yrs >= 35, "Advanced Age >= 35 Years", 
+                                 "Standard Age <35 Years"),
+         mat_age_group = factor(mat_age_group,
+                                levels = c("Standard Age <35 Years", 
+                                           "Advanced Age >= 35 Years"), 
+                                labels = c("Standard Age <35 Years", 
+                                           "Advanced Age >= 35 Years")))
+
+# define list of genes
+genes_of_interest <- c("SHANK2", "PRICKLE3", "FIG4")
+
+# define function to create plots for gene list
+build_gene_plots <- function(df, list){
+  
+  # # # define list to store plots in 
+  # all_hists   <- list()
+  # all_scatts  <- list()
+  # all_boxps   <- list()
+ 
+   # loop through the genes in the gene list 
+  for (gene in list) {
+      
+    # filter data 
+    gene_data <- df %>% 
+      filter(GENE == gene)
+    
+    # calculate sample size for graphs, best practice to exclude NA's
+    n_samples <- sum(!is.na(gene_data$expression_value))
+    
+    # report statistical values on plots 
+      # calculate the median for histogram 
+      gene_median <- round(median(gene_data$expression_value, na.rm = TRUE), 2)
+      # calculate the correlation for scatterplot
+      correlation <- round(cor(gene_data$mat_vitD, gene_data$expression_value), 2)
+  
+    # build histogram
+    gene_hist <- ggplot(gene_data, aes(x = expression_value)) +
+      geom_histogram(bins = 20, fill = fm_pal[7], color = fm_pal[5], alpha = 0.9) +
+      geom_vline(aes(xintercept = median(expression_value, na.rm = TRUE)),
+                   color = fm_pal[3], linetype = "dashed", linewidth = .8) +
+    theme_ft() +
+      labs(
+        title = bquote(bold("Distribution of") ~ bolditalic(.(gene)) ~ bold("Gene Expression")),
+        subtitle = paste0("n = ", n_samples),
+        x = bquote(italic(.(gene)) ~ "Expression"),
+        y = "Number of Samples") +
+      annotate("text", x = gene_median, y = Inf, label = paste("Median:", gene_median), 
+               hjust = 1.1, vjust = 1.5, fontface = "italic", size = 4) +
+      theme(
+          plot.title    = element_text(face = "bold", size = 16),
+          plot.subtitle = element_text(size = 11, margin = margin(b = 10), hjust = 0.5),
+          axis.title.x  = element_text(margin = margin(t = 10)),
+          axis.title.y  = element_text(margin = margin(r = 10)),
+          plot.caption  = element_text(size = 8, hjust = 0)
+        )
+    
+    # build scatterplot 
+    gene_scatt <- ggplot(gene_data, aes(x = mat_vitD, y = expression_value)) +
+      geom_point(color = fm_pal[7], alpha = 0.6, size = 2) +
+      geom_smooth(method = "lm", formula = y ~ x, se = TRUE,
+                  color = fm_pal[3], fill = fm_pal[5], alpha = 0.3, linewidth = .8) +
+      theme_ft() +
+      labs(
+        title = bquote(bolditalic(.(gene)) ~ bold("Expression vs. Maternal Vitamin D")),
+        subtitle = paste0("linear fit with 95% confidence intervals; n = ", n_samples),
+        x = "Maternal Vitamin D (ng/mL)", 
+        y = bquote(italic(.(gene)) ~ "Expression")) +
+      annotate("text", x = Inf, y = Inf, label = paste("r =", correlation), 
+               hjust = 2.5, vjust = 1.5, fontface = "italic", size = 4) +
+      theme(
+        plot.title    = element_text(face = "bold", size = 16),
+        plot.subtitle = element_text(size = 11, margin = margin(b = 10), hjust = 0.5),
+        axis.title.x  = element_text(margin = margin(t = 10)),
+        axis.title.y  = element_text(margin = margin(r = 10)),
+        plot.caption  = element_text(size = 8, hjust = 0)
+      )
+    
+    # build boxplot
+    gene_boxp <- ggplot(gene_data, aes(x = preg_preeclampsia, y = expression_value, 
+                                       fill = mat_age_group)) +
+      geom_boxplot(outlier.shape = NA, alpha = 0.8, width = 0.7,linewidth = .5,
+                   position = position_dodge(width = 0.8)) +
+      geom_point(position = position_jitterdodge(jitter.width = 0.15,
+                                                 dodge.width  = 0.8,
+                                                 seed = 33),
+                 alpha = 0.9, size = 1.0, color = fm_pal[5]) +
+      scale_fill_manual(name = "Maternal Age Group",
+                        values = c(fm_pal[7], fm_pal[3])) +
+      theme_ft() +
+      labs(
+        title = bquote(bolditalic(.(gene)) ~ bold("Expression by Pregnancy Outcome and Maternal Age")),
+        subtitle = paste0("n = ", n_samples),
+        x = "Pregnancy Outcome",
+        y = bquote(italic(.(gene)) ~ "Expression"),
+        fillm= "Maternal Age Group") +
+      theme(
+        legend.position = "bottom",
+        legend.title    = element_text(face = "bold"),
+        plot.title      = element_text(face = "bold", size = 14),
+        plot.subtitle   = element_text(size = 11, margin = margin(b = 10), hjust = 0.5),
+        axis.title.x    = element_text(margin = margin(t = 10)),
+        axis.title.y    = element_text(margin = margin(r = 10))
+      )
+    
+    # # store plots in lists
+    # all_hists[[gene]]   <- gene_hist
+    # all_scatts[[gene]]  <- gene_scatt
+    # all_boxps[[gene]]   <- gene_boxp
+    # 
+    # # wrap the plot lists
+    # combined_hists   <- wrap_plots(all_hists, ncol = 3)
+    # combined_scatts  <- wrap_plots(all_scatts, ncol = 3)
+    # combined_boxps   <- wrap_plots(all_boxps, ncol = 3) +
+    #                     plot_layout(guides = "collect") &
+    #                     theme(legend.position = "bottom")
+
+    # # return individual plots
+    print(gene_hist)
+    print(gene_scatt)
+    print(gene_boxp)
+    
+    # save individual plots once
+    ggsave(paste0("S2_", gene, "_Histogram.png"), plot = gene_hist, width = 7,
+           height = 4, dpi = 300)
+    ggsave(paste0("S2_", gene, "_Scatterplot.png"), plot = gene_scatt, width = 7,
+           height = 4, dpi = 300)
+    ggsave(paste0("S2_", gene, "_Boxplot.png"), plot = gene_boxp, width = 7,
+           height = 4, dpi = 300)
+    
+    # # return combined plots
+    # print(combined_hists)
+    # print(combined_scatts)
+    # print(combined_boxps)
+    
+    # # save combines plots once
+    # ggsave("S2_all_Histograms.png", plot = combined_hists, width = 20,
+    #        height = 5, dpi = 300)
+    # ggsave("S2_all_Scatterplots.png", plot = combined_scatts, width = 20,
+    #        height = 5, dpi = 300)
+    # ggsave("S2_all_Boxplots.png", plot = combined_boxps, width = 20,
+    #        height = 5, dpi = 300)
+    # 
+    
+  }
+}
+# run function
+  build_gene_plots(pregnancy_data, genes_of_interest)
+```
+
+
+
+
+
+
+## Brainstorming for final submission 
+Should I be referencing the cheatsheets and such I used when getting stuck coding?
+
+Things to reference:
+
+R libraries:
+library(tidyverse)
+library(ggplot2)
+library(artyfarty)
+library(ggthemes)
+library(patchwork)
+library(table1)
+
+
+Study:
+https://pubmed.ncbi.nlm.nih.gov/27841759/
+
+AMA format:
+Mirzakhani H, Litonjua AA, McElrath TF, et al. Early pregnancy vitamin D status and risk of preeclampsia. J Clin Invest. 2016;126(12):4702-4715. doi:10.1172/JCI89031
+
+
+
+Methods:
+Data source + initial sample size:
+Data came from Early pregnancy vitamin D status and risk of preeclampsia study 
+Trial registration: ClinicalTrials.gov NCT00920621.
+The gene expression data comes from the Affymetrix Human Gene 1.0 ST Array
+Initial sample size was 157 
+
+Picked genes based on fun names
+
+analyses conducted:
+Cleaned data:
+Used str_remove to remove labels from covariate data values 
+Once cleaned to numeric values, used as.numeric to update character data types to numeric data types
+Joined data files together
+Turned asthma and preeclampsia data into factors
+Pivoted wide data into long format 
+
+
+Created maternal age group variable. Derived categorical variable from the continuous variable mat_age_years to look at advanced vs standard age pregnancy. Followed John’s Hopkins classifications of standard age <35 and advanced age >=35
+
+Made histograms to look at frequency distribution of gene expression, scatter plots with linear regression to look at correlation between vitamin d and gene expression, and box plots to look at gene expression across pregnancy status and maternal age group 
+
+
+
+
+Cite software and packages used:
+Rstudio version: Version 2026.09.0+174 (2026.09.0+174)
+"R version 4.6.1 (2026-06-24)"
+
+R libraries:
+library(tidyverse)
+library(ggplot2)
+library(artyfarty)
+library(ggthemes)
+library(patchwork)
+
+Git hut repository:
+https://github.com/anisomers/Somers-Data-Science-1-Class-Project-
+
+
+
+Results:
+Description of the findings of each table/figure (outlined below). 
+
+For each item, provide a brief
+statement referencing and interpreting them and then cite the relevant table or figure, as
+discussed in class. 
+
+Example: “Gene x was not associated with covariate y (Figure 2).” All items
+must be typeset with captions/figure legends as discussed in class.
+
+
+
+Summary statistics table (LaTeX formatted) with all covariates you looked at and 2 additional
+continuous covariates (3 continuous, 2 categorical total), stratified a categorical covariate
+Publication quality plots from submission 2 (incorporating any previous feedback)
+Publication quality heatmap (10 genes, tracking bars for 2 categorical variables, clustering)
+One additional plot type not previously discussed in class to visualize your data in a new and
+unique way. Be creative! See list at end of document for plot types that would not count.
+
+
+
+## start table 1
+```{r}
+# library("table1")
+
+# for safety even tho probably not needed
+# create duplicate in case relabeling messes up data 
+# create maternal age categorical variable
+# asthma as factor
+pregnancy_table_data <- covariate_cleaned %>% 
+  mutate(mat_age_group = if_else(mat_age_yrs >= 35, "Advanced Age >= 35 Years", 
+                                 "Standard Age <35 Years"),
+         mat_age_group = factor(mat_age_group,
+                                levels = c("Standard Age <35 Years", 
+                                           "Advanced Age >= 35 Years"), 
+                                labels = c("Standard Age <35 Years", 
+                                           "Advanced Age >= 35 Years"))) %>%
+  mutate(mat_asthma = factor(mat_asthma, levels = c(0, 1),
+                             labels = c("Healthy", "Asthmatic")))
+  
+  
+# relabel covariate columns for table
+label(pregnancy_table_data$mat_age_yrs) <- "Maternal Age (years)"
+label(pregnancy_table_data$mat_vitD) <- "Maternal Vitamin D (ng/mL)"
+label(pregnancy_table_data$mat_BMI) <- "Maternal BMI (kg/m2)"
+label(pregnancy_table_data$mat_age_group) <- "Maternal Age Group"
+label(pregnancy_table_data$mat_asthma) <- "Asthma Status"
+
+# build table with covariates, grouped by preeclampsia
+pregnancy_table1 <- table1(~ mat_age_yrs + mat_vitD + mat_BMI + mat_age_group + mat_asthma | preg_preeclampsia, 
+                           data = pregnancy_table_data)
+
+pregnancy_table1
+```
+
+
+## build heatmap 
+
+```{r}
+# pick out genes
+heat_map_genes <- c("SHANK2", "PRICKLE2", "PRICKLE3", "FIG4", "NAAA", "EVL", "SET", "SUN3", "JAM2", "ME3")
+
+# make new data frame
+heat_map_df <- pregnancy_data %>%
+  filter(GENE %in% heat_map_genes) %>%
+  select(geoID, GENE, expression_value) %>%
+  pivot_wider(names_from = geoID, values_from = expression_value) %>%
+  column_to_rownames("GENE")
+
+# prepare annotation bars and rename
+column_annot <- pregnancy_data %>%
+  select(geoID, preg_preeclampsia, mat_age_group) %>%
+  distinct(geoID, .keep_all = TRUE) %>%
+  column_to_rownames("geoID") %>% 
+  rename(
+    "Pregnancy Outcome" = preg_preeclampsia, 
+    "Maternal Age Group" = mat_age_group)
+  
+# define colors
+annotation_colorp <- list(
+  "Pregnancy Outcome" = c("Normal" = "#f896d8", "Preeclampsia" = "#72195a"),
+  "Maternal Age Group" = c("Standard Age <35 Years" = "#b298dc", "Advanced Age >= 35 Years" = "#b9faf8"))
+
+# build heat map 
+# hide ids but show gene name
+gene_heatmap <- pheatmap(
+  t(scale(t(heat_map_df))), # helps normalize genes to each other, and mean centers
+  show_rownames = TRUE,         
+  show_colnames = FALSE,          
+  annotation_col = column_annot,  
+  annotation_colors = annotation_colorp,
+  clustering_distance_cols = "euclidean", 
+  clustering_method = "ward.D2",
+  color = viridis(100, option = "G"),
+  main = "Heatmap of Gene Expression by Pregnancy Outcome and Age")
+
+# save heatmap
+ggsave("heatmap.png", gene_heatmap,
+       width = 12, height = 6, dpi = 300)
+```
+
+## build additional plot 
+```{r}
+# waffle package 
+# remotes::install_github("hrbrmstr/waffle")
+# library(waffle)
+
+# define theme for waffle plot and pictogram
+waffle_theme <- theme(
+  plot.background = element_rect(fill = "white", color = NA),
+  panel.background = element_rect(fill = "white", color = NA),
+  legend.background = element_rect(fill = "white", color = NA),
+  legend.key = element_rect(fill = "white", color = NA),
+  legend.box.background = element_rect(fill = "white", color = NA),
+  plot.title = element_text(face = "bold", size = 16),
+  plot.title.position = "plot",
+  plot.subtitle = element_text(size = 11, margin = margin(b = 10), hjust = 0.5),
+  plot.caption  = element_text(size = 8, hjust = 0),
+  legend.title  = element_text(face = "bold"),
+  legend.direction = "vertical",
+  legend.position = "bottom",
+  axis.text  = element_blank(),
+  axis.ticks = element_blank(),
+  axis.title = element_blank(),
+  panel.grid = element_blank(),
+  panel.border = element_blank(),
+)
+
+# make waffle plot for percent of those with preeclampsia that are standard vs 
+# advanced age
+# one row per person, then count age groups among preeclampsia cases
+# make percentages
+waffle_totals <- pregnancy_data %>%
+  distinct(geoID, .keep_all = TRUE) %>%
+  filter(preg_preeclampsia == "Preeclampsia") %>%
+  count(mat_age_group) %>% 
+   mutate(pct = 100 * n / sum(n))
+
+# I used chat.dartmouth to help me get the percentages into the legend
+# legend labels with exact count and percent
+preeclampsia_labels <- c("Standard Age <35 Years"   = sprintf("Standard age (<35 years): %d (%.1f%%)",
+                                       waffle_totals$n[waffle_totals$mat_age_group == "Standard Age <35 Years"],
+                                       waffle_totals$pct[waffle_totals$mat_age_group == "Standard Age <35 Years"]),
+                         "Advanced Age >= 35 Years" = sprintf("Advanced age (\u226535 years): %d (%.1f%%)",
+                                       waffle_totals$n[waffle_totals$mat_age_group == "Advanced Age >= 35 Years"],
+                                       waffle_totals$pct[waffle_totals$mat_age_group == "Advanced Age >= 35 Years"]))
+
+# build waffle plot
+ggplot(waffle_totals, aes(fill = mat_age_group, values = n)) +
+  geom_waffle(n_rows = 10, 
+              make_proportional = FALSE,
+              color = "white", 
+              flip = TRUE) +
+  coord_equal() +
+  scale_fill_manual(
+    values = c("Standard Age <35 Years" = fm_pal[7],
+               "Advanced Age >= 35 Years" = fm_pal[3]),
+    name = "Maternal Age Group",
+    labels = preeclampsia_labels,
+    drop = FALSE) +
+  labs(title = "Age Distribution in Preeclampsia Patients",
+       subtitle = paste0("n = ", sum(waffle_totals$n), " mothers"),
+       caption = "Each square represents one mother") +
+  waffle_theme 
+
+
+# build again for non preeclampisa 
+waffle_normal_totals <- pregnancy_data %>%
+  distinct(geoID, .keep_all = TRUE) %>%
+  filter(preg_preeclampsia == "Normal") %>%
+  count(mat_age_group) %>%
+  mutate(pct = 100 * n / sum(n))
+
+# I used chat.dartmouth to help me get the percentages into the legend
+# legend labels with exact count and percent
+normal_labels <- c("Standard Age <35 Years"   = sprintf("Standard age (<35 years): %d (%.1f%%)",
+                                       waffle_normal_totals$n[waffle_normal_totals$mat_age_group == "Standard Age <35 Years"],
+                                       waffle_normal_totals$pct[waffle_normal_totals$mat_age_group == "Standard Age <35 Years"]),
+                         "Advanced Age >= 35 Years" = sprintf("Advanced age (\u226535 years): %d (%.1f%%)",
+                                       waffle_normal_totals$n[waffle_normal_totals$mat_age_group == "Advanced Age >= 35 Years"],
+                                       waffle_normal_totals$pct[waffle_normal_totals$mat_age_group == "Advanced Age >= 35 Years"]))
+
+# build waffle plot,
+ggplot(waffle_normal_totals, aes(fill = mat_age_group, values = n)) +
+  geom_waffle(n_rows = 10, 
+              make_proportional = FALSE,
+              color = "white", 
+              flip = TRUE) +
+  coord_equal() +
+  scale_fill_manual(
+    values = c("Standard Age <35 Years" = fm_pal[7],
+               "Advanced Age >= 35 Years" = fm_pal[3]),
+    labels = normal_labels,
+    name = "Maternal Age Group",
+    drop = FALSE) +
+  labs(title = "Age Distribution in Non-Preeclampsia Patients",
+       subtitle = paste0("n = ", sum(waffle_normal_totals$n), " mothers"),
+       caption = "Each square represents one mother") +
+  waffle_theme 
+
+```
+
+## turn into pictogram 
+```{r}
+#waffle::install_fa_fonts()
+# library(extrafont)
+
+# wrap them to display next to each other 
+# build preeclampsia pictogram
+# build pictogram
+preeclampsia_pictogram <- ggplot(waffle_totals, aes(label = mat_age_group, color = mat_age_group, values = n)) +
+  geom_pictogram(n_rows = 5,
+                 make_proportional = FALSE,
+                 flip = TRUE,
+                 size = 4) +
+  scale_label_pictogram(
+    name = "Maternal Age Group",
+    values = c("Standard Age <35 Years" = "female",
+               "Advanced Age >= 35 Years" = "female"),
+    labels = preeclampsia_labels,
+    drop = FALSE) +
+  scale_color_manual(
+    name = "Maternal Age Group",
+    values = c("Standard Age <35 Years" = fm_pal[7],
+               "Advanced Age >= 35 Years" = fm_pal[3]),
+    labels = preeclampsia_labels,
+    drop = FALSE) +
+  coord_equal() +
+  labs(title = "Preeclampsia",
+       subtitle = paste0("n = ", sum(waffle_totals$n), " mothers"),
+       caption = "Each icon represents one mother") +
+  waffle_theme +
+  guides(color = guide_legend(override.aes = list(size = 5)))
+
+# build normal pictogram
+normal_pictogram <- ggplot(waffle_normal_totals, aes(label = mat_age_group, color = mat_age_group, values = n)) +
+  geom_pictogram(n_rows = 10,
+                 make_proportional = FALSE,
+                 flip = TRUE,
+                 size = 4) +
+  scale_label_pictogram(
+    name = "Maternal Age Group",
+    values = c("Standard Age <35 Years" = "female",
+               "Advanced Age >= 35 Years" = "female"),
+    labels = normal_labels,
+    drop = FALSE) +
+  scale_color_manual(
+    name = "Maternal Age Group",
+    values = c("Standard Age <35 Years" = fm_pal[7],
+               "Advanced Age >= 35 Years" = fm_pal[3]),
+    labels = normal_labels,
+    drop = FALSE) +
+  coord_equal() +
+  labs(title = "Normal",
+       subtitle = paste0("n = ", sum(waffle_normal_totals$n), " mothers"),
+       caption = "Each icon represents one mother") +
+  waffle_theme +
+  guides(color = guide_legend(override.aes = list(size = 5)))
+
+
+# combine pictograms
+combined_pictograms <- preeclampsia_pictogram + normal_pictogram +
+  plot_layout(ncol = 2) +
+  plot_annotation(title = "Maternal Age Distribution by Pregnancy Outcome",
+                  theme = theme(plot.title = element_text(face = "bold", size = 18,)))
+
+combined_pictograms
+
+# save plots
+ggsave("combined_pictograms.png", combined_pictograms,
+       width = 12, height = 6, dpi = 300, bg = "white")
+
+```
